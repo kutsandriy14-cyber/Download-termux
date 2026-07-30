@@ -26,18 +26,18 @@ arrow_select() {
   local key rest
 
   while true; do
-    clear
-    echo "$prompt"
-    echo
+    clear >&2
+    echo "$prompt" >&2
+    echo >&2
     for i in "${!opts[@]}"; do
       if [ "$i" -eq "$sel" ]; then
-        echo "  ➤ ${opts[$i]}"
+        echo "  ➤ ${opts[$i]}" >&2
       else
-        echo "    ${opts[$i]}"
+        echo "    ${opts[$i]}" >&2
       fi
     done
-    echo
-    echo "(стрелки ↑/↓, Enter — выбрать)"
+    echo >&2
+    echo "(стрелки ↑/↓, Enter — выбрать)" >&2
 
     IFS= read -rsn1 key
     if [[ "$key" == $'\x1b' ]]; then

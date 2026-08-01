@@ -590,13 +590,34 @@ else
   if [ -n "\$LOCAL_IP" ]; then
     printf "\${C_ACCENT}[i] Ссылка из локальной сети (с другого устройства): http://%s:%s\${C_RESET}\n" "\$LOCAL_IP" "\$MANAGER_PORT"
   fi
-  if command -v termux-open-url >/dev/null 2>&1; then
-    termux-open-url "http://localhost:\$MANAGER_PORT"
-  fi
+  echo "[i] Браузер откроется сам, как только панель реально поднимется (может занять пару секунд)..."
 fi
 
 echo "[i] Запущено (с автоперезапуском). Ctrl+C — остановить."
 echo
+
+# Ждёт, пока порт реально начнёт отвечать (без внешних зависимостей — через
+# встроенный в bash /dev/tcp), и только тогда открывает браузер. Раньше браузер
+# открывался СРАЗУ, ещё до того как node успевал поднять сервер — отсюда
+# ERR_CONNECTION_REFUSED при первом запуске. Работает как отдельная фоновая
+# задача, никак не завязанная на сам node manager.js — чтобы не трогать
+# его foreground-запуск и не ломать нормальную остановку по Ctrl+C.
+if [ "\$INSTALL_MODE" = "client" ]; then
+  (
+    tries=0
+    while [ \$tries -lt 40 ]; do
+      if (exec 3<>"/dev/tcp/127.0.0.1/\$MANAGER_PORT") 2>/dev/null; then
+        exec 3<&- 3>&- 2>/dev/null
+        if command -v termux-open-url >/dev/null 2>&1; then
+          termux-open-url "http://localhost:\$MANAGER_PORT"
+        fi
+        break
+      fi
+      sleep 0.5
+      tries=\$((tries + 1))
+    done
+  ) &
+fi
 
 while true; do
   # Node мог сломаться между запусками (рассинхрон с openssl после pkg upgrade) — чиним на лету

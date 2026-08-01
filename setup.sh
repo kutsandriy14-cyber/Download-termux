@@ -415,6 +415,11 @@ MAX_FAST_RESTARTS=5
 fast_restart_count=0
 INSTALL_MODE="$INSTALL_MODE"
 
+# Сбрасываем всё, что могло застрять во входном буфере (например, случайный Enter,
+# нажатый во время отсчёта перед автозапуском) — иначе он "проглатывает" первый
+# же вопрос (порт/bore) мгновенно, без реального выбора.
+while read -r -t 0.05 -n 1000 _discard 2>/dev/null; do :; done
+
 # ---------- Цвета и стрелочные меню (тот же стиль, что у установщика) ----------
 PORT_FILE="port.txt"
 C_RESET='\033[0m'
@@ -497,10 +502,29 @@ MANAGER_PORT="\$(pick_port)"
 export MANAGER_PORT
 clear
 
+# Определяем реальный локальный IP устройства (для ссылки, которую можно скопировать
+# и вставить в клиент-панель) — пробуем пару способов, т.к. не везде есть одно и то же.
+detect_local_ip() {
+  local ip
+  ip="\$(ip route get 1.1.1.1 2>/dev/null | sed -n 's/.*src \([0-9.]*\).*/\1/p')"
+  if [ -z "\$ip" ] && command -v ifconfig >/dev/null 2>&1; then
+    ip="\$(ifconfig 2>/dev/null | grep -A1 'wlan0\|eth0' | grep 'inet ' | head -1 | sed -n 's/.*inet \([0-9.]*\).*/\1/p')"
+  fi
+  echo "\$ip"
+}
+LOCAL_IP="\$(detect_local_ip)"
+
 if [ "\$INSTALL_MODE" = "server" ]; then
   echo "[i] Сервер для ботов слушает порт: \$MANAGER_PORT (сменить порт — снова запусти ~/start-server-api)"
-  echo "[i] Своей веб-панели тут нет. Управляй этим сервером из клиент-панели,"
-  echo "    добавив адрес http://<адрес-этого-устройства>:\$MANAGER_PORT во вкладке «Серверы»."
+  echo "[i] Своей веб-панели тут нет. Управляй этим сервером из клиент-панели."
+  echo
+  if [ -n "\$LOCAL_IP" ]; then
+    printf "\${C_ACCENT}\${C_BOLD}[✓] Ссылка для клиент-панели (локальная сеть): http://%s:%s\${C_RESET}\n" "\$LOCAL_IP" "\$MANAGER_PORT"
+  else
+    echo "[!] Не удалось определить локальный IP автоматически."
+    echo "    Посмотри его сам (например: ip addr, или Настройки → Wi-Fi → подключение)"
+    echo "    и добавь в клиент-панели: http://<IP-этого-телефона>:\$MANAGER_PORT"
+  fi
 
   # ---------- Необязательный bore-туннель, чтобы сервер был виден из интернета ----------
   setup_bore_tunnel() {
@@ -523,16 +547,20 @@ if [ "\$INSTALL_MODE" = "server" ]; then
       return
     fi
     echo "[i] Поднимаю bore-туннель для порта \$MANAGER_PORT..."
-    nohup bore local "\$MANAGER_PORT" --to bore.pub > bore-tunnel.log 2>&1 &
+    rm -f bore-tunnel.log
+    bore local "\$MANAGER_PORT" --to bore.pub > >(tee bore-tunnel.log) 2>&1 &
     echo \$! > bore-tunnel.pid
-    sleep 3
+    echo "[i] Жду подключения bore (вывод самого bore виден ниже)..."
+    sleep 4
     bore_addr="\$(grep -o 'bore\.pub:[0-9]*' bore-tunnel.log | head -1)"
     if [ -n "\$bore_addr" ]; then
       echo "\$bore_addr" > bore-address.txt
-      printf "\${C_ACCENT}\${C_BOLD}[✓] Публичный адрес сервера: http://%s\${C_RESET}\n" "\$bore_addr"
+      printf "\${C_ACCENT}\${C_BOLD}[✓] Публичная ссылка (доступна из интернета): http://%s\${C_RESET}\n" "\$bore_addr"
       echo "    Добавь \"http://\$bore_addr\" в клиент-панели, во вкладке «Серверы»."
     else
-      echo "[!] Не удалось определить публичный адрес — смотри bore-tunnel.log"
+      echo "[!] Пока не нашёл публичный адрес автоматически."
+      echo "    Смотри вывод bore выше — там должна быть строка вида \"listening at bore.pub:XXXXX\"."
+      echo "    Он же сохраняется в файл bore-tunnel.log."
     fi
   }
 
@@ -543,10 +571,13 @@ if [ "\$INSTALL_MODE" = "server" ]; then
   fi
 else
   echo "[i] Панель слушает порт: \$MANAGER_PORT (сменить порт — снова запусти ~/start-web-panel.sh)"
+  echo
+  printf "\${C_ACCENT}\${C_BOLD}[✓] Ссылка на панель (на этом устройстве): http://localhost:%s\${C_RESET}\n" "\$MANAGER_PORT"
+  if [ -n "\$LOCAL_IP" ]; then
+    printf "\${C_ACCENT}[i] Ссылка из локальной сети (с другого устройства): http://%s:%s\${C_RESET}\n" "\$LOCAL_IP" "\$MANAGER_PORT"
+  fi
   if command -v termux-open-url >/dev/null 2>&1; then
     termux-open-url "http://localhost:\$MANAGER_PORT"
-  else
-    echo "[i] Открой в браузере: http://localhost:\$MANAGER_PORT"
   fi
 fi
 
@@ -661,6 +692,7 @@ if [ -f "$LAUNCHER_PATH" ]; then
   if [ -t 0 ]; then
     echo "Запускаю через 2 секунды (Ctrl+C — отменить и запустить позже вручную: $LAUNCHER_PATH)..."
     sleep 2
+    while read -r -t 0.05 -n 1000 _discard 2>/dev/null; do :; done
     exec "$LAUNCHER_PATH"
   else
     echo "[i] Нет интерактивного терминала — не запускаю автоматически."

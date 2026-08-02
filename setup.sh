@@ -421,6 +421,11 @@ INSTALL_MODE="$INSTALL_MODE"
 while read -r -t 0.05 -n 1000 _discard 2>/dev/null; do :; done
 
 # ---------- Цвета и стрелочные меню (тот же стиль, что у установщика) ----------
+# cargo кладёт bore в ~/.cargo/bin — эта папка не всегда попадает в PATH
+# новой сессии Termux, из-за чего "command -v bore" не находит уже стоящий bore
+# и скрипт снова предлагает установку. Явно добавляем путь на всякий случай.
+export PATH="\$HOME/.cargo/bin:\$PATH"
+
 PORT_FILE="port.txt"
 C_RESET='\033[0m'
 C_BOLD='\033[1m'
@@ -527,17 +532,15 @@ detect_local_ip() {
   echo "\$ip"
 }
 LOCAL_IP="\$(detect_local_ip)"
+LINKS_FILE="\$HOME/bot-links.txt"
+: > "\$LINKS_FILE"
 
 if [ "\$INSTALL_MODE" = "server" ]; then
   echo "[i] Сервер для ботов слушает порт: \$MANAGER_PORT (сменить порт — снова запусти ~/start-server-api)"
   echo "[i] Своей веб-панели тут нет. Управляй этим сервером из клиент-панели."
-  echo
+
   if [ -n "\$LOCAL_IP" ]; then
-    printf "\${C_ACCENT}\${C_BOLD}[✓] Ссылка для клиент-панели (локальная сеть): http://%s:%s\${C_RESET}\n" "\$LOCAL_IP" "\$MANAGER_PORT"
-  else
-    echo "[!] Не удалось определить локальный IP автоматически."
-    echo "    Посмотри его сам (например: ip addr, или Настройки → Wi-Fi → подключение)"
-    echo "    и добавь в клиент-панели: http://<IP-этого-телефона>:\$MANAGER_PORT"
+    echo "Локальная сеть: http://\$LOCAL_IP:\$MANAGER_PORT" >> "\$LINKS_FILE"
   fi
 
   # ---------- Необязательный bore-туннель, чтобы сервер был виден из интернета ----------
@@ -569,8 +572,7 @@ if [ "\$INSTALL_MODE" = "server" ]; then
     bore_addr="\$(grep -o 'bore\.pub:[0-9]*' bore-tunnel.log | head -1)"
     if [ -n "\$bore_addr" ]; then
       echo "\$bore_addr" > bore-address.txt
-      printf "\${C_ACCENT}\${C_BOLD}[✓] Публичная ссылка (доступна из интернета): http://%s\${C_RESET}\n" "\$bore_addr"
-      echo "    Добавь \"http://\$bore_addr\" в клиент-панели, во вкладке «Серверы»."
+      echo "Публично (bore): http://\$bore_addr" >> "\$LINKS_FILE"
     else
       echo "[!] Пока не нашёл публичный адрес автоматически."
       echo "    Смотри вывод bore выше — там должна быть строка вида \"listening at bore.pub:XXXXX\"."
@@ -585,13 +587,32 @@ if [ "\$INSTALL_MODE" = "server" ]; then
   fi
 else
   echo "[i] Панель слушает порт: \$MANAGER_PORT (сменить порт — снова запусти ~/start-web-panel.sh)"
-  echo
-  printf "\${C_ACCENT}\${C_BOLD}[✓] Ссылка на панель (на этом устройстве): http://localhost:%s\${C_RESET}\n" "\$MANAGER_PORT"
+  echo "На этом устройстве: http://localhost:\$MANAGER_PORT" >> "\$LINKS_FILE"
   if [ -n "\$LOCAL_IP" ]; then
-    printf "\${C_ACCENT}[i] Ссылка из локальной сети (с другого устройства): http://%s:%s\${C_RESET}\n" "\$LOCAL_IP" "\$MANAGER_PORT"
+    echo "Из локальной сети: http://\$LOCAL_IP:\$MANAGER_PORT" >> "\$LINKS_FILE"
   fi
-  echo "[i] Браузер откроется сам, как только панель реально поднимется (может занять пару секунд)..."
 fi
+
+# ---------- Итоговая сводка ссылок — печатается ПОСЛЕДНЕЙ, чтобы не потерялась
+# в потоке предыдущего вывода (установка bore и т.п.), и сохраняется в файл,
+# который можно посмотреть в любой момент: cat ~/bot-links.txt
+clear
+printf "\${C_CYAN}\${C_BOLD}=============================================\${C_RESET}\n"
+printf "\${C_CYAN}\${C_BOLD} Ссылки для подключения\${C_RESET}\n"
+printf "\${C_CYAN}\${C_BOLD}=============================================\${C_RESET}\n"
+if [ -s "\$LINKS_FILE" ]; then
+  while IFS= read -r link_line; do
+    printf "\${C_ACCENT}\${C_BOLD}[✓] %s\${C_RESET}\n" "\$link_line"
+  done < "\$LINKS_FILE"
+else
+  echo "[!] Не удалось определить ни одной ссылки автоматически."
+  echo "    Посмотри IP сам: ip addr (или Настройки → Wi-Fi → подключение)"
+  echo "    и подставь порт \$MANAGER_PORT вручную."
+fi
+echo
+echo "Эти же ссылки сохранены в файл — посмотреть в любой момент:"
+echo "   cat ~/bot-links.txt"
+echo
 
 echo "[i] Запущено (с автоперезапуском). Ctrl+C — остановить."
 echo

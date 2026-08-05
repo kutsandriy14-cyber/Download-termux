@@ -5,7 +5,7 @@
 
 set -e
 
-INSTALLER_VERSION="1.7.3"
+INSTALLER_VERSION="1.7.4"
 INSTALLER_FEATURES="tabs,pinger,auto-connect,bulk-actions,termux-notify,inst-json,cluster,install-mode,port-picker,colored-ui,ip-required-bore"
 
 # ---------- Цвета для красивого интерфейса (ANSI, поддерживаются терминалом Termux) ----------
@@ -414,6 +414,16 @@ RESTART_LOG="supervisor.log"
 MAX_FAST_RESTARTS=5
 fast_restart_count=0
 INSTALL_MODE="$INSTALL_MODE"
+
+# ---------- Wake-lock: включаем автоматически при КАЖДОМ запуске лаунчера ----------
+# Раньше это спрашивалось только один раз при установке (setup.sh) — если Termux
+# перезапускался, телефон перезагружался или лок слетал вручную, при следующем
+# запуске ~/$LAUNCHER_NAME он сам не включался. Теперь включаем без вопросов
+# при каждом старте (снять можно командой termux-wake-unlock, если не нужно).
+if command -v termux-wake-lock >/dev/null 2>&1; then
+  termux-wake-lock
+  echo "[i] Wake-lock включён — экран может гаснуть, процесс не заснёт."
+fi
 
 # Сбрасываем всё, что могло застрять во входном буфере (например, случайный Enter,
 # нажатый во время отсчёта перед автозапуском) — иначе он "проглатывает" первый
